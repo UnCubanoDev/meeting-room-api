@@ -21,11 +21,19 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rooms")
 @Tag(name = "Salas", description = "Gestion de salas de reunion")
 public class RoomController {
+
+    private static final SortableFields SORTABLE = SortableFields.of(Map.of(
+            "name", "name",
+            "capacity", "capacity",
+            "location", "location",
+            "createdAt", "createdAt",
+            "id", "id"));
 
     private final RoomService roomService;
 
@@ -37,7 +45,7 @@ public class RoomController {
     @Operation(summary = "Lista las salas activas de forma paginada")
     public PagedModel<RoomResponse> findAll(
             @ParameterObject @PageableDefault(size = 20, sort = "name") Pageable pageable) {
-        return new PagedModel<>(roomService.findAll(pageable));
+        return new PagedModel<>(roomService.findAll(SORTABLE.apply(pageable)));
     }
 
     @GetMapping("/{id}")

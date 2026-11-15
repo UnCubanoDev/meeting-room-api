@@ -135,6 +135,21 @@ class RoomApiIntegrationTest {
                 .andExpect(jsonPath("$.page.size").value(100));
     }
 
+    /**
+     * Ordenar por una propiedad que no existe es un error del cliente (400), no un 500.
+     */
+    @Test
+    void rejectsUnknownSortProperty() throws Exception {
+        mockMvc.perform(get("/api/rooms").param("sort", "noExiste"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Parametro invalido"))
+                .andExpect(jsonPath("$.detail", containsString("'noExiste'")));
+
+        mockMvc.perform(get("/api/rooms").param("sort", "capacity,desc"))
+                .andExpect(status().isOk());
+    }
+
     @Test
     void rejectsUnsupportedContentType() throws Exception {
         mockMvc.perform(post("/api/rooms").contentType(MediaType.TEXT_PLAIN).content("{}"))
