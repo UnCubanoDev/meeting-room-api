@@ -1,6 +1,9 @@
 package com.meetingroom.api.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,6 +30,8 @@ import java.util.Map;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(ResourceNotFoundException exception,
                                                         HttpServletRequest request) {
@@ -39,11 +44,23 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Conflicto", exception.getMessage(), request);
     }
 
+    /**
+     * Solo las violaciones de unicidad son un conflicto de negocio. El resto (NOT NULL, CHECK,
+     * longitudes) es un fallo interno: se registra con su causa raiz y se responde 500 para no
+     * enmascarar el problema como si fuera un duplicado.
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ProblemDetail> handleDataIntegrity(DataIntegrityViolationException exception,
                                                              HttpServletRequest request) {
-        return problem(HttpStatus.CONFLICT, "Conflicto",
-                "La operacion incumple una restriccion de la base de datos", request);
+        if (PersistenceErrors.isUniqueViolation(exception)) {
+            log.warn("Violacion de unicidad en {}: {}", request.getRequestURI(),
+                    NestedExceptionUtils.getMostSpecificCause(exception).getMessage());
+            return problem(HttpStatus.CONFLICT, "Conflicto",
+                    "El valor enviado ya existe y debe ser unico", request);
+        }
+        log.error("Error de integridad de datos en {}", request.getRequestURI(), exception);
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno",
+                "No se pudo completar la operacion", request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

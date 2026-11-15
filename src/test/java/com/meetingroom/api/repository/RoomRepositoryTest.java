@@ -1,6 +1,7 @@
 package com.meetingroom.api.repository;
 
 import com.meetingroom.api.entity.Room;
+import com.meetingroom.api.exception.PersistenceErrors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -37,6 +38,10 @@ class RoomRepositoryTest {
                 });
     }
 
+    /**
+     * Verifica contra la base de datos real la premisa de la que depende
+     * {@code RoomService}: la violacion de uq_room_name es reconocible como unicidad.
+     */
     @Test
     void rejectsTwoRoomsWithTheSameName() {
         roomRepository.saveAndFlush(new Room("Sala Azul", 8, null, null));
@@ -44,7 +49,10 @@ class RoomRepositoryTest {
         Room duplicate = new Room("Sala Azul", 4, null, null);
 
         assertThatThrownBy(() -> roomRepository.saveAndFlush(duplicate))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .satisfies(exception -> assertThat(PersistenceErrors.isUniqueViolation(exception))
+                        .as("la violacion de uq_room_name debe clasificarse como unicidad")
+                        .isTrue());
     }
 
 }

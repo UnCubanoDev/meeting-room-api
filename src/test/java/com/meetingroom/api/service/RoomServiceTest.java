@@ -11,8 +11,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,7 +39,7 @@ class RoomServiceTest {
     void createsRoomWhenNameIsAvailable() {
         RoomRequest request = new RoomRequest("Sala Azul", 8, "Planta 3", "Pizarra");
         when(roomRepository.existsByName("Sala Azul")).thenReturn(false);
-        when(roomRepository.save(any(Room.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roomRepository.saveAndFlush(any(Room.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         RoomResponse response = roomService.create(request);
 
@@ -44,7 +47,41 @@ class RoomServiceTest {
         assertThat(response.capacity()).isEqualTo(8);
         assertThat(response.location()).isEqualTo("Planta 3");
         assertThat(response.active()).isTrue();
-        verify(roomRepository).save(any(Room.class));
+        verify(roomRepository).saveAndFlush(any(Room.class));
+    }
+
+    @Test
+    void translatesUniqueViolationIntoDuplicateRoomName() {
+        when(roomRepository.existsByName("Sala Azul")).thenReturn(false);
+        when(roomRepository.saveAndFlush(any(Room.class))).thenThrow(new DuplicateKeyException("uq_room_name"));
+
+        assertThatThrownBy(() -> roomService.create(new RoomRequest("Sala Azul", 8, null, null)))
+                .isInstanceOf(DuplicateRoomNameException.class)
+                .hasMessageContaining("Sala Azul")
+                .hasCauseInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void translatesUniqueViolationDetectedBySqlState() {
+        when(roomRepository.existsByName("Sala Azul")).thenReturn(false);
+        when(roomRepository.saveAndFlush(any(Room.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicado",
+                        new SQLException("Violacion de unicidad", "23505")));
+
+        assertThatThrownBy(() -> roomService.create(new RoomRequest("Sala Azul", 8, null, null)))
+                .isInstanceOf(DuplicateRoomNameException.class);
+    }
+
+    @Test
+    void propagatesIntegrityViolationsThatAreNotUniqueViolations() {
+        when(roomRepository.existsByName("Sala Azul")).thenReturn(false);
+        DataIntegrityViolationException notUnique = new DataIntegrityViolationException("check de capacidad",
+                new SQLException("Fallo del CHECK", "23514"));
+        when(roomRepository.saveAndFlush(any(Room.class))).thenThrow(notUnique);
+
+        assertThatThrownBy(() -> roomService.create(new RoomRequest("Sala Azul", 8, null, null)))
+                .isSameAs(notUnique)
+                .isNotInstanceOf(DuplicateRoomNameException.class);
     }
 
     @Test
@@ -56,7 +93,7 @@ class RoomServiceTest {
                 .isInstanceOf(DuplicateRoomNameException.class)
                 .hasMessageContaining("Sala Azul");
 
-        verify(roomRepository, never()).save(any(Room.class));
+        verify(roomRepository, never()).saveAndFlush(any(Room.class));
     }
 
     @Test

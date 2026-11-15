@@ -102,12 +102,18 @@ Los errores se devuelven como Problem Details (RFC 7807) con
 | Sala inexistente | `404` | `Recurso no encontrado` |
 | Nombre de sala duplicado | `409` | `Conflicto` |
 | Payload invalido | `400` | `Validacion fallida` |
+| Fallo interno de integridad | `500` | `Error interno` |
+
+Solo las violaciones de unicidad se traducen a `409`; cualquier otro fallo de integridad de
+datos se registra en el log con su causa raiz y responde `500` para no enmascararlo.
 
 ### Seguridad
 
-`/api/**`, `/v3/api-docs/**`, `/swagger-ui/**` y `/error` son accesibles sin autenticacion;
-el resto de rutas se deniega. La cadena de filtros es `stateless` y CSRF esta desactivado
-porque la API no usa sesiones. La autenticacion se incorporara en un incremento posterior.
+Las rutas se habilitan una por una: `GET /api/rooms`, `GET /api/rooms/{id}`, `POST /api/rooms`,
+junto con `/v3/api-docs/**`, `/swagger-ui/**` y `/error`. Cualquier otra ruta se deniega,
+**incluidas las que cuelguen de `/api`**: un endpoint nuevo nace cerrado y hay que autorizarlo
+de forma explicita. La cadena de filtros es `stateless` y CSRF esta desactivado porque la API
+no usa sesiones. La autenticacion se incorporara en un incremento posterior.
 
 ## Ejecucion preliminar
 
