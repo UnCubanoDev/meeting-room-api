@@ -2,10 +2,11 @@
 
 API REST para la gestion de salas de reunion y sus reservas.
 
-Estado actual (incremento 5): la API expone la gestion de salas en `/api/rooms` con listado
-paginado (solo salas activas), consulta por id y alta. Incluye validacion de entrada, errores
-uniformes en formato Problem Details (RFC 7807), documentacion OpenAPI y autenticacion JWT
-(el alta de salas exige rol ADMIN). Todavia no hay gestion de reservas.
+Estado actual (incremento 6): la API gestiona salas (`/api/rooms`) y reservas
+(`/api/bookings`). Las reservas se crean, listan con filtros por sala, dia y estado con
+paginacion, y se cancelan; un solape con otra reserva activa de la misma sala responde `409`.
+Incluye validacion de entrada, errores uniformes en formato Problem Details (RFC 7807),
+documentacion OpenAPI y autenticacion JWT.
 
 ## Tecnologias
 
@@ -45,7 +46,7 @@ com.meetingroom.api
 
 ## Endpoints
 
-Todas las rutas cuelgan de `/api/rooms`.
+### Salas
 
 | Metodo | Ruta | Descripcion | Respuestas |
 | --- | --- | --- | --- |
@@ -54,7 +55,8 @@ Todas las rutas cuelgan de `/api/rooms`.
 | `POST` | `/api/rooms` | Da de alta una sala | `201` + cabecera `Location`, `400`, `409`, `415` |
 
 El listado acepta `page`, `size` y `sort` (por defecto `size=20` y `sort=name`; el maximo de
-`size` es 100). Devuelve el envoltorio estable de Spring (`PagedModel`):
+`size` es 100). Se puede ordenar por `name`, `capacity`, `location`, `createdAt` e `id`; cualquier
+otro valor responde `400`. Devuelve el envoltorio estable de Spring (`PagedModel`):
 
 ```json
 {
@@ -102,6 +104,64 @@ entero y mayor que cero (no admite decimales: `8.5` se rechaza, no se trunca), `
 maximo 120 y `description` maximo 500. La respuesta de alta incluye la cabecera `Location`
 con la URL del recurso creado.
 
+### Reservas
+
+| Metodo | Ruta | Descripcion | Respuestas |
+| --- | --- | --- | --- |
+| `GET` | `/api/bookings` | Lista paginada, con filtros opcionales | `200`, `400` |
+| `GET` | `/api/bookings/{id}` | Obtiene una reserva por id | `200`, `400`, `404` |
+| `POST` | `/api/bookings` | Reserva una sala a nombre del usuario autenticado | `201` + `Location`, `400`, `401`, `404`, `409` |
+| `POST` | `/api/bookings/{id}/cancel` | Cancela una reserva | `200`, `401`, `403`, `404`, `409` |
+
+Ejemplo de alta (el token se obtiene en `POST /api/auth/login`, ver [Seguridad](#seguridad)):
+
+```bash
+curl -i -X POST http://localhost:8080/api/bookings   -H "Authorization: Bearer $TOKEN"   -H "Content-Type: application/json"   -d '{"roomId":1,"start":"2030-01-15T10:00:00+01:00","end":"2030-01-15T11:00:00+01:00"}'
+```
+
+```json
+{
+  "id": 1,
+  "roomId": 1,
+  "roomName": "Sala Atlas",
+  "responsible": "admin",
+  "start": "2030-01-15T09:00:00Z",
+  "end": "2030-01-15T10:00:00Z",
+  "status": "ACTIVE",
+  "cancelledAt": null,
+  "createdAt": "2026-11-15T20:13:13.836012Z"
+}
+```
+
+Reglas:
+
+- **Responsable**: es siempre el usuario del token; el cuerpo no puede indicarlo, para que nadie
+  reserve en nombre de otro.
+- **Fechas**: ISO-8601 con desplazamiento horario (`Z`, `+01:00`...). Una hora sin zona es
+  ambigua y se rechaza con `400`. Las respuestas se devuelven en UTC.
+- **Validacion**: `roomId`, `start` y `end` obligatorios; `start` en el futuro; `end` posterior
+  a `start` (el error se informa en el campo `end`). La sala debe existir y estar activa (`404`).
+- **Solape (`409`)**: el intervalo es semiabierto `[start, end)`. Una reserva de 10:00 a 11:00
+  choca con otra de 10:30 a 11:30, pero no con una de 11:00 a 12:00. Las reservas canceladas no
+  ocupan la sala.
+- **Concurrencia**: el alta bloquea la fila de la sala (`SELECT ... FOR UPDATE`), asi que dos
+  peticiones simultaneas sobre la misma sala se resuelven una tras otra y la segunda recibe
+  `409`. En PostgreSQL, la restriccion `EXCLUDE` de la migracion `V3` (extension `btree_gist`)
+  lo garantiza ademas a nivel de base de datos.
+- **Cancelacion**: solo el responsable o un `ADMIN` (`403` en otro caso). Es una baja logica: la
+  reserva pasa a `CANCELLED`, guarda `cancelledAt` y sigue siendo consultable. Cancelar dos
+  veces, o una reserva que ya ha terminado, responde `409`.
+
+Listado: `GET /api/bookings?roomId=1&date=2030-01-15&status=ACTIVE&page=0&size=20&sort=start,asc`.
+Todos los filtros son opcionales y se combinan:
+
+| Parametro | Efecto |
+| --- | --- |
+| `roomId` | Solo reservas de esa sala |
+| `date` | Reservas que ocupan algun momento de ese dia (`YYYY-MM-DD`), aunque empiecen la vispera. El dia se interpreta en la zona `BOOKINGS_TIME_ZONE` (UTC por defecto) |
+| `status` | `ACTIVE` o `CANCELLED`; sin el, se listan ambas |
+| `sort` | `start` (por defecto), `end`, `createdAt` o `id` |
+
 ### Errores
 
 Los errores se devuelven como Problem Details (RFC 7807) con
@@ -125,9 +185,12 @@ Los errores se devuelven como Problem Details (RFC 7807) con
 | --- | --- | --- |
 | Sala inexistente (o inactiva) | `404` | `Recurso no encontrado` |
 | Nombre de sala duplicado | `409` | `Conflicto` |
+| Sala ya reservada en ese horario | `409` | `Sala ocupada` |
+| Cancelar una reserva cancelada o terminada | `409` | `Estado no valido` |
+| Cancelar una reserva ajena sin ser `ADMIN` | `403` | `Acceso denegado` |
 | Payload invalido | `400` | `Validacion fallida` |
 | JSON malformado, capacidad fraccionaria o fuera de rango | `400` | `Cuerpo ilegible` |
-| `{id}` con formato no numerico | `400` | `Parametro invalido` |
+| `{id}`, `date` o `status` con formato invalido, o `sort` no permitido | `400` | `Parametro invalido` |
 | `Content-Type` distinto de `application/json` | `415` | `Tipo de contenido no soportado` |
 | Credenciales incorrectas (login) | `401` | `Credenciales invalidas` |
 | Falta el token o no es valido | `401` | `No autenticado` |
@@ -169,6 +232,8 @@ Matriz de acceso:
 | `POST /api/auth/login` | Publico |
 | `GET /api/rooms`, `GET /api/rooms/{id}` | Publico |
 | `POST /api/rooms` | `ROLE_ADMIN` |
+| `GET /api/bookings`, `GET /api/bookings/{id}` | Publico |
+| `POST /api/bookings`, `POST /api/bookings/{id}/cancel` | Cualquier usuario autenticado (la cancelacion ademas exige ser el responsable o `ADMIN`) |
 | `/v3/api-docs/**`, `/swagger-ui/**`, `/error` | Publico |
 | Cualquier otra ruta | Denegada |
 
@@ -186,6 +251,7 @@ Variables de entorno:
 | --- | --- | --- |
 | `JWT_SECRET` | secreto de desarrollo | Clave de firma HS256 (minimo 32 bytes) |
 | `JWT_TTL` | `PT30M` | Vida del token (formato ISO-8601) |
+| `BOOKINGS_TIME_ZONE` | `UTC` | Zona en la que se interpreta el filtro `date` de reservas |
 
 ## Ejecucion preliminar
 
