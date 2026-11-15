@@ -2,9 +2,9 @@
 
 API REST para la gestion de salas de reunion y sus reservas.
 
-Este repositorio contiene unicamente el **primer incremento**: el esqueleto del proyecto
-(estructura de paquetes, configuracion base y build). Aun no incluye entidades, endpoints,
-reglas de negocio, autenticacion ni migraciones de base de datos.
+Estado actual (incremento 2): estructura del proyecto, configuracion base, entidad `Room`
+y su migracion Flyway (`V1__create_room.sql`). Todavia no hay endpoints, reglas de negocio
+ni autenticacion.
 
 ## Tecnologias
 
@@ -70,6 +70,7 @@ repositorio:
 Una vez arrancada, la documentacion estara disponible en `/swagger-ui.html`
 (especificacion en `/v3/api-docs`).
 
-> Nota: la aplicacion arranca contra PostgreSQL real; no hay migraciones Flyway todavia,
-> asi que el esquema debe existir previamente o permanecer vacio. Los tests usan H2 en
-> memoria (perfil `test`) y no requieren base de datos.
+> Nota: la aplicacion arranca contra PostgreSQL real y aplica las migraciones de
+> `src/main/resources/db/migration` al iniciar. Hibernate corre en modo `validate`, de modo
+> que el esquema debe coincidir con las entidades. Los tests usan H2 en memoria (perfil
+> `test`), con Flyway desactivado y el esquema generado por Hibernate.
