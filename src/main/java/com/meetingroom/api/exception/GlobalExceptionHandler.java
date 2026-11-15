@@ -47,6 +47,30 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Conflicto", exception.getMessage(), request);
     }
 
+    @ExceptionHandler(BookingConflictException.class)
+    public ResponseEntity<ProblemDetail> handleBookingConflict(BookingConflictException exception,
+                                                               HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Sala ocupada", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(BookingStateException.class)
+    public ResponseEntity<ProblemDetail> handleBookingState(BookingStateException exception,
+                                                            HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Estado no valido", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    public ResponseEntity<ProblemDetail> handleForbiddenOperation(ForbiddenOperationException exception,
+                                                                  HttpServletRequest request) {
+        return problem(HttpStatus.FORBIDDEN, "Acceso denegado", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidSortException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidSort(InvalidSortException exception,
+                                                           HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Parametro invalido", exception.getMessage(), request);
+    }
+
     /**
      * Solo las violaciones de unicidad son un conflicto de negocio. El resto (NOT NULL, CHECK,
      * longitudes) es un fallo interno: se registra con su causa raiz y se responde 500 para no

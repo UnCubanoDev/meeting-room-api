@@ -48,6 +48,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/rooms", "/api/rooms/{id}").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/rooms").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/bookings", "/api/bookings/{id}").permitAll()
+                        // Quien puede cancelar una reserva concreta lo decide BookingService.
+                        .requestMatchers(HttpMethod.POST, "/api/bookings", "/api/bookings/{id}/cancel").authenticated()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().denyAll())
