@@ -6,7 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,6 +55,21 @@ class RoomRepositoryTest {
                 .satisfies(exception -> assertThat(PersistenceErrors.isUniqueViolation(exception))
                         .as("la violacion de uq_room_name debe clasificarse como unicidad")
                         .isTrue());
+    }
+
+    @Test
+    void excludesInactiveRoomsFromTheActiveViews() {
+        Room active = roomRepository.saveAndFlush(new Room("Sala Activa", 4, null, null));
+        Room inactive = new Room("Sala Inactiva", 4, null, null);
+        ReflectionTestUtils.setField(inactive, "active", false);
+        Long inactiveId = roomRepository.saveAndFlush(inactive).getId();
+
+        assertThat(roomRepository.findByIdAndActiveTrue(active.getId())).isPresent();
+        assertThat(roomRepository.findByIdAndActiveTrue(inactiveId)).isEmpty();
+        assertThat(roomRepository.findByActiveTrue(Pageable.unpaged()).getContent())
+                .extracting(Room::getName)
+                .contains("Sala Activa")
+                .doesNotContain("Sala Inactiva");
     }
 
 }

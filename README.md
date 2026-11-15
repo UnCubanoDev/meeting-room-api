@@ -2,10 +2,10 @@
 
 API REST para la gestion de salas de reunion y sus reservas.
 
-Estado actual (incremento 3): la API ya expone la gestion de salas en `/api/rooms`
-(listado, consulta por id y alta) con validacion de entrada, errores en formato
-Problem Details (RFC 7807) y documentacion OpenAPI. Todavia no hay autenticacion ni
-gestion de reservas.
+Estado actual (incremento 4): la API expone la gestion de salas en `/api/rooms` con listado
+paginado (solo salas activas), consulta por id y alta. Incluye validacion de entrada, errores
+uniformes en formato Problem Details (RFC 7807) y documentacion OpenAPI. Todavia no hay
+autenticacion ni gestion de reservas.
 
 ## Tecnologias
 
@@ -49,9 +49,32 @@ Todas las rutas cuelgan de `/api/rooms`.
 
 | Metodo | Ruta | Descripcion | Respuestas |
 | --- | --- | --- | --- |
-| `GET` | `/api/rooms` | Lista todas las salas | `200` |
-| `GET` | `/api/rooms/{id}` | Obtiene una sala por id | `200`, `404` |
-| `POST` | `/api/rooms` | Da de alta una sala | `201` + cabecera `Location`, `400`, `409` |
+| `GET` | `/api/rooms` | Lista paginada de salas activas | `200` |
+| `GET` | `/api/rooms/{id}` | Obtiene una sala activa por id | `200`, `400`, `404` |
+| `POST` | `/api/rooms` | Da de alta una sala | `201` + cabecera `Location`, `400`, `409`, `415` |
+
+El listado acepta `page`, `size` y `sort` (por defecto `size=20` y `sort=name`; el maximo de
+`size` es 100). Devuelve el envoltorio estable de Spring (`PagedModel`):
+
+```json
+{
+  "content": [
+    {
+      "id": 1,
+      "name": "Sala Atlas",
+      "capacity": 8,
+      "location": "Planta 2",
+      "description": "Proyector 4K",
+      "active": true,
+      "createdAt": "2026-11-15T20:13:13.836012Z",
+      "updatedAt": "2026-11-15T20:13:13.836012Z"
+    }
+  ],
+  "page": { "size": 20, "number": 0, "totalElements": 1, "totalPages": 1 }
+}
+```
+
+Las salas con `active = false` no aparecen en el listado ni en el detalle.
 
 Ejemplo de alta:
 
@@ -74,9 +97,10 @@ curl -i -X POST http://localhost:8080/api/rooms \
 }
 ```
 
-Reglas de validacion: `name` obligatorio (maximo 100 caracteres), `capacity` entero mayor
-que cero, `location` maximo 120 y `description` maximo 500. La respuesta de alta incluye la
-cabecera `Location` con la URL del recurso creado.
+Reglas de validacion: `name` obligatorio (maximo 100 caracteres), `capacity` obligatorio,
+entero y mayor que cero (no admite decimales: `8.5` se rechaza, no se trunca), `location`
+maximo 120 y `description` maximo 500. La respuesta de alta incluye la cabecera `Location`
+con la URL del recurso creado.
 
 ### Errores
 
@@ -99,9 +123,12 @@ Los errores se devuelven como Problem Details (RFC 7807) con
 
 | Situacion | Estado | `title` |
 | --- | --- | --- |
-| Sala inexistente | `404` | `Recurso no encontrado` |
+| Sala inexistente (o inactiva) | `404` | `Recurso no encontrado` |
 | Nombre de sala duplicado | `409` | `Conflicto` |
 | Payload invalido | `400` | `Validacion fallida` |
+| JSON malformado, capacidad fraccionaria o fuera de rango | `400` | `Cuerpo ilegible` |
+| `{id}` con formato no numerico | `400` | `Parametro invalido` |
+| `Content-Type` distinto de `application/json` | `415` | `Tipo de contenido no soportado` |
 | Fallo interno de integridad | `500` | `Error interno` |
 
 Solo las violaciones de unicidad se traducen a `409`; cualquier otro fallo de integridad de

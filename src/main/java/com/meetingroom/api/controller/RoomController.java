@@ -6,6 +6,11 @@ import com.meetingroom.api.service.RoomService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.web.PagedModel;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -30,9 +34,10 @@ public class RoomController {
     }
 
     @GetMapping
-    @Operation(summary = "Lista todas las salas")
-    public List<RoomResponse> findAll() {
-        return roomService.findAll();
+    @Operation(summary = "Lista las salas activas de forma paginada")
+    public PagedModel<RoomResponse> findAll(
+            @ParameterObject @PageableDefault(size = 20, sort = "name") Pageable pageable) {
+        return new PagedModel<>(roomService.findAll(pageable));
     }
 
     @GetMapping("/{id}")
@@ -41,7 +46,7 @@ public class RoomController {
         return roomService.findById(id);
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Crea una sala")
     public ResponseEntity<RoomResponse> create(@Valid @RequestBody RoomRequest request) {
         RoomResponse created = roomService.create(request);

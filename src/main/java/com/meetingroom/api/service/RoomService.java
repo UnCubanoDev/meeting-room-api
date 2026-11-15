@@ -8,10 +8,10 @@ import com.meetingroom.api.exception.PersistenceErrors;
 import com.meetingroom.api.exception.ResourceNotFoundException;
 import com.meetingroom.api.repository.RoomRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 @Service
 @Transactional(readOnly = true)
@@ -45,14 +45,13 @@ public class RoomService {
         }
     }
 
-    public List<RoomResponse> findAll() {
-        return roomRepository.findAll().stream()
-                .map(RoomResponse::from)
-                .toList();
+    public Page<RoomResponse> findAll(Pageable pageable) {
+        return roomRepository.findByActiveTrue(pageable)
+                .map(RoomResponse::from);
     }
 
     public RoomResponse findById(Long id) {
-        return roomRepository.findById(id)
+        return roomRepository.findByIdAndActiveTrue(id)
                 .map(RoomResponse::from)
                 .orElseThrow(() -> new ResourceNotFoundException("No existe ninguna sala con id " + id));
     }

@@ -4,16 +4,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.NestedExceptionUtils;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.net.URI;
 import java.util.LinkedHashMap;
@@ -22,12 +24,13 @@ import java.util.Map;
 /**
  * Traduce las excepciones de la aplicacion a respuestas RFC 7807 (Problem Details).
  * <p>
- * Se declara con maxima precedencia porque Spring Boot registra su propio
- * {@code ProblemDetailsExceptionHandler} (activado por {@code spring.mvc.problemdetails.enabled}),
- * que responde a {@link MethodArgumentNotValidException} sin detallar los campos invalidos.
+ * Se declara con orden 0 porque Spring Boot registra su propio {@code ProblemDetailsExceptionHandler}
+ * (activado por {@code spring.mvc.problemdetails.enabled}) sin orden explicito, es decir, con la
+ * prioridad minima; basta con adelantarse a ese valor. El motivo es que el handler de Boot responde
+ * a {@link MethodArgumentNotValidException} sin detallar los campos invalidos.
  */
 @RestControllerAdvice
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(0)
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -78,6 +81,29 @@ public class GlobalExceptionHandler {
         problem.setProperty("errors", fieldErrors);
 
         return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetail> handleUnreadableBody(HttpMessageNotReadableException exception,
+                                                              HttpServletRequest request) {
+        log.warn("Cuerpo ilegible en {}: {}", request.getRequestURI(),
+                NestedExceptionUtils.getMostSpecificCause(exception).getMessage());
+        return problem(HttpStatus.BAD_REQUEST, "Cuerpo ilegible",
+                "El cuerpo de la peticion no es un JSON valido para este recurso", request);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException exception,
+                                                            HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Parametro invalido",
+                "El parametro '" + exception.getName() + "' tiene un formato invalido", request);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ProblemDetail> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException exception,
+                                                                    HttpServletRequest request) {
+        return problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Tipo de contenido no soportado",
+                "El Content-Type de la peticion debe ser application/json", request);
     }
 
     private ResponseEntity<ProblemDetail> problem(HttpStatus status, String title, String detail,

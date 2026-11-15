@@ -1,6 +1,7 @@
 package com.meetingroom.api.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -10,8 +11,9 @@ public record RoomRequest(
         @Size(max = 100, message = "El nombre no puede superar los 100 caracteres")
         String name,
 
+        @NotNull(message = "La capacidad es obligatoria")
         @Positive(message = "La capacidad debe ser mayor que cero")
-        int capacity,
+        Integer capacity,
 
         @Size(max = 120, message = "La ubicacion no puede superar los 120 caracteres")
         String location,

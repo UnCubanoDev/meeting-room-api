@@ -1,15 +1,20 @@
 package com.meetingroom.api;
 
 import com.meetingroom.api.repository.RoomRepository;
+import com.meetingroom.api.entity.Room;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -47,7 +52,7 @@ class RoomApiIntegrationTest {
 
         mockMvc.perform(get("/api/rooms"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].name").value(org.hamcrest.Matchers.hasItem("Sala Integracion")));
+                .andExpect(jsonPath("$.content[*].name", hasItem("Sala Integracion")));
     }
 
     @Test
@@ -64,7 +69,7 @@ class RoomApiIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.title").value("Conflicto"))
-                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Sala Duplicada")))
+                .andExpect(jsonPath("$.detail", containsString("Sala Duplicada")))
                 .andExpect(jsonPath("$.instance").value("/api/rooms"));
     }
 
@@ -90,6 +95,46 @@ class RoomApiIntegrationTest {
 
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * Los listados se paginan (PagedModel) y excluyen las salas inactivas; el detalle de una
+     * sala inactiva tampoco se publica.
+     */
+    @Test
+    void paginatesActiveRoomsOnly() throws Exception {
+        for (int i = 1; i <= 3; i++) {
+            mockMvc.perform(post("/api/rooms").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"Sala Paginada " + i + "\",\"capacity\":4}"))
+                    .andExpect(status().isCreated());
+        }
+        Room inactive = new Room("Sala Oculta", 2, null, null);
+        ReflectionTestUtils.setField(inactive, "active", false);
+        Long inactiveId = roomRepository.saveAndFlush(inactive).getId();
+
+        mockMvc.perform(get("/api/rooms").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.page.size").value(2))
+                .andExpect(jsonPath("$.content[*].name", not(hasItem("Sala Oculta"))));
+
+        mockMvc.perform(get("/api/rooms/" + inactiveId))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void clampsPageSizeToTheConfiguredMaximum() throws Exception {
+        mockMvc.perform(get("/api/rooms").param("size", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page.size").value(100));
+    }
+
+    @Test
+    void rejectsUnsupportedContentType() throws Exception {
+        mockMvc.perform(post("/api/rooms").contentType(MediaType.TEXT_PLAIN).content("{}"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Tipo de contenido no soportado"));
     }
 
 }

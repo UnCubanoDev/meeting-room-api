@@ -13,6 +13,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.sql.SQLException;
@@ -100,7 +105,7 @@ class RoomServiceTest {
     void returnsRoomById() {
         Room room = new Room("Sala Azul", 8, "Planta 3", null);
         ReflectionTestUtils.setField(room, "id", 42L);
-        when(roomRepository.findById(42L)).thenReturn(Optional.of(room));
+        when(roomRepository.findByIdAndActiveTrue(42L)).thenReturn(Optional.of(room));
 
         RoomResponse response = roomService.findById(42L);
 
@@ -110,7 +115,7 @@ class RoomServiceTest {
 
     @Test
     void failsWhenRoomDoesNotExist() {
-        when(roomRepository.findById(99L)).thenReturn(Optional.empty());
+        when(roomRepository.findByIdAndActiveTrue(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> roomService.findById(99L))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -118,12 +123,15 @@ class RoomServiceTest {
     }
 
     @Test
-    void listsAllRooms() {
-        when(roomRepository.findAll()).thenReturn(List.of(new Room("Sala Azul", 8, null, null)));
+    void listsActiveRoomsWithPagination() {
+        Pageable pageable = PageRequest.of(0, 20, Sort.by("name"));
+        when(roomRepository.findByActiveTrue(pageable))
+                .thenReturn(new PageImpl<>(List.of(new Room("Sala Azul", 8, null, null)), pageable, 1));
 
-        List<RoomResponse> rooms = roomService.findAll();
+        Page<RoomResponse> rooms = roomService.findAll(pageable);
 
-        assertThat(rooms).extracting(RoomResponse::name).containsExactly("Sala Azul");
+        assertThat(rooms.getContent()).extracting(RoomResponse::name).containsExactly("Sala Azul");
+        assertThat(rooms.getTotalElements()).isEqualTo(1);
     }
 
 }
