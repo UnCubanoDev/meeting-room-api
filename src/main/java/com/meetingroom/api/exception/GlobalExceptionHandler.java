@@ -99,6 +99,12 @@ public class GlobalExceptionHandler {
                 "El parametro '" + exception.getName() + "' tiene un formato invalido", request);
     }
 
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidCredentials(InvalidCredentialsException exception,
+                                                                   HttpServletRequest request) {
+        return problem(HttpStatus.UNAUTHORIZED, "Credenciales invalidas", exception.getMessage(), request);
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ProblemDetail> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException exception,
                                                                     HttpServletRequest request) {

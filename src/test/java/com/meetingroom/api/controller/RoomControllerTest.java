@@ -3,15 +3,14 @@ package com.meetingroom.api.controller;
 import com.meetingroom.api.dto.RoomResponse;
 import com.meetingroom.api.exception.DuplicateRoomNameException;
 import com.meetingroom.api.exception.ResourceNotFoundException;
-import com.meetingroom.api.security.SecurityConfig;
 import com.meetingroom.api.service.RoomService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -31,8 +30,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * Contrato HTTP del controlador. Los filtros de seguridad se desactivan aqui a proposito:
+ * el contrato de autenticacion y autorizacion se verifica en {@code SecurityRulesTest}, y
+ * asi estos tests no dependen de la infraestructura de JWT.
+ */
 @WebMvcTest(RoomController.class)
-@Import(SecurityConfig.class)
+@AutoConfigureMockMvc(addFilters = false)
 class RoomControllerTest {
 
     @Autowired
