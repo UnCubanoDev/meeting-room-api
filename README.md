@@ -2,10 +2,10 @@
 
 API REST para la gestion de salas de reunion y sus reservas.
 
-Estado actual (incremento 4): la API expone la gestion de salas en `/api/rooms` con listado
+Estado actual (incremento 5): la API expone la gestion de salas en `/api/rooms` con listado
 paginado (solo salas activas), consulta por id y alta. Incluye validacion de entrada, errores
-uniformes en formato Problem Details (RFC 7807) y documentacion OpenAPI. Todavia no hay
-autenticacion ni gestion de reservas.
+uniformes en formato Problem Details (RFC 7807), documentacion OpenAPI y autenticacion JWT
+(el alta de salas exige rol ADMIN). Todavia no hay gestion de reservas.
 
 ## Tecnologias
 
@@ -129,18 +129,63 @@ Los errores se devuelven como Problem Details (RFC 7807) con
 | JSON malformado, capacidad fraccionaria o fuera de rango | `400` | `Cuerpo ilegible` |
 | `{id}` con formato no numerico | `400` | `Parametro invalido` |
 | `Content-Type` distinto de `application/json` | `415` | `Tipo de contenido no soportado` |
+| Credenciales incorrectas (login) | `401` | `Credenciales invalidas` |
+| Falta el token o no es valido | `401` | `No autenticado` |
+| Token valido sin rol suficiente | `403` | `Acceso denegado` |
 | Fallo interno de integridad | `500` | `Error interno` |
 
 Solo las violaciones de unicidad se traducen a `409`; cualquier otro fallo de integridad de
 datos se registra en el log con su causa raiz y responde `500` para no enmascararlo.
 
+Los `401` y `403` que se producen en la cadena de filtros tambien usan Problem Details,
+aunque no pasan por el manejador de excepciones del controlador.
+
 ### Seguridad
 
-Las rutas se habilitan una por una: `GET /api/rooms`, `GET /api/rooms/{id}`, `POST /api/rooms`,
-junto con `/v3/api-docs/**`, `/swagger-ui/**` y `/error`. Cualquier otra ruta se deniega,
-**incluidas las que cuelguen de `/api`**: un endpoint nuevo nace cerrado y hay que autorizarlo
-de forma explicita. La cadena de filtros es `stateless` y CSRF esta desactivado porque la API
-no usa sesiones. La autenticacion se incorporara en un incremento posterior.
+La API es `stateless` (sin sesiones, CSRF desactivado) y se autentica con **JWT firmado en
+HS256**. El token se obtiene en `POST /api/auth/login` y se envia como
+`Authorization: Bearer <token>`; expira a los 30 minutos y no hay refresh.
+
+```bash
+curl -i -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin1234"}'
+```
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 1800,
+  "username": "admin",
+  "role": "ADMIN"
+}
+```
+
+Matriz de acceso:
+
+| Ruta | Acceso |
+| --- | --- |
+| `POST /api/auth/login` | Publico |
+| `GET /api/rooms`, `GET /api/rooms/{id}` | Publico |
+| `POST /api/rooms` | `ROLE_ADMIN` |
+| `/v3/api-docs/**`, `/swagger-ui/**`, `/error` | Publico |
+| Cualquier otra ruta | Denegada |
+
+Las rutas se habilitan una por una: un endpoint nuevo nace cerrado y hay que autorizarlo de
+forma explicita. Los usuarios viven en la tabla `app_user` y las contrasenas se guardan con
+BCrypt.
+
+> **Usuario de arranque:** la migracion `V2` inserta `admin` / `admin1234` para desarrollo.
+> Ese hash esta versionado en el repositorio, asi que **no es un secreto**: cambialo antes de
+> desplegar en cualquier entorno real.
+
+Variables de entorno:
+
+| Variable | Por defecto | Descripcion |
+| --- | --- | --- |
+| `JWT_SECRET` | secreto de desarrollo | Clave de firma HS256 (minimo 32 bytes) |
+| `JWT_TTL` | `PT30M` | Vida del token (formato ISO-8601) |
 
 ## Ejecucion preliminar
 
