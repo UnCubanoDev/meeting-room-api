@@ -13,12 +13,4 @@ CREATE TABLE app_user
     CONSTRAINT ck_app_user_role CHECK (role IN ('USER', 'ADMIN'))
 );
 
--- Usuario de arranque para entornos locales.
--- Contrasena: admin1234 (BCrypt, coste 10). CAMBIAR EN CUALQUIER ENTORNO REAL:
--- este hash queda versionado en el repositorio, por lo que no es un secreto.
-INSERT INTO app_user (username, password_hash, role, created_at, updated_at)
-VALUES ('admin',
-        '$2a$10$7O8CpNJgFQbzFMBc9SDRmubcEDTZNQZsOmvfPPRgvXMlLP8nlO34y',
-        'ADMIN',
-        CURRENT_TIMESTAMP,
-        CURRENT_TIMESTAMP);
+-- Los usuarios de desarrollo se cargan solo con el perfil dev (db/dev-data).

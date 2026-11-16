@@ -241,15 +241,18 @@ Las rutas se habilitan una por una: un endpoint nuevo nace cerrado y hay que aut
 forma explicita. Los usuarios viven en la tabla `app_user` y las contrasenas se guardan con
 BCrypt.
 
-> **Usuario de arranque:** la migracion `V2` inserta `admin` / `admin1234` para desarrollo.
-> Ese hash esta versionado en el repositorio, asi que **no es un secreto**: cambialo antes de
-> desplegar en cualquier entorno real.
+> **Usuarios de desarrollo:** solo con el perfil `dev` se cargan `admin` / `admin1234` (`ADMIN`)
+> y `usuario` / `usuario1234` (`USER`), desde `db/dev-data`. Sus hashes estan versionados, asi que
+> **no son secretos**. Fuera de `dev` no se crea ningun usuario: el esquema sale vacio.
+
+Los tokens se validan por firma, vigencia y emisor (`iss`): un token firmado con la misma clave
+pero emitido por otro no se acepta.
 
 Variables de entorno:
 
 | Variable | Por defecto | Descripcion |
 | --- | --- | --- |
-| `JWT_SECRET` | secreto de desarrollo | Clave de firma HS256 (minimo 32 bytes) |
+| `JWT_SECRET` | _(ninguno; en `dev`, uno de desarrollo)_ | Clave de firma HS256 (minimo 32 bytes). Sin ella la aplicacion no arranca |
 | `JWT_TTL` | `PT30M` | Vida del token (formato ISO-8601) |
 | `BOOKINGS_TIME_ZONE` | `UTC` | Zona en la que se interpreta el filtro `date` de reservas |
 
@@ -262,11 +265,14 @@ Compilar y ejecutar los tests:
 mvnw.cmd clean test      # Windows
 ```
 
-Arrancar la aplicacion:
+Arrancar la aplicacion en local con el perfil `dev` (usuarios de prueba y secreto JWT de
+desarrollo):
 
 ```bash
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
+
+Sin el perfil `dev` hay que definir `JWT_SECRET` y crear los usuarios por otra via.
 
 La configuracion de base de datos se toma de variables de entorno, sin credenciales en el
 repositorio:
