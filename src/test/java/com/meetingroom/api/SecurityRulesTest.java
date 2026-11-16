@@ -130,6 +130,29 @@ class SecurityRulesTest {
                 .andExpect(jsonPath("$.title").value("No autenticado"));
     }
 
+    /**
+     * Firma y vigencia correctas no bastan: el token debe haberlo emitido esta API.
+     */
+    @Test
+    void rejectsTokenFromAnotherIssuer() throws Exception {
+        String foreign = jwtEncoder.encode(JwtEncoderParameters.from(
+                        JwsHeader.with(MacAlgorithm.HS256).build(),
+                        JwtClaimsSet.builder()
+                                .issuer("https://otro-emisor")
+                                .subject("admin")
+                                .issuedAt(Instant.now())
+                                .expiresAt(Instant.now().plusSeconds(600))
+                                .claim("roles", java.util.List.of("ADMIN"))
+                                .build()))
+                .getTokenValue();
+
+        mockMvc.perform(post("/api/rooms").contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + foreign)
+                        .content(room("Sala Otro Emisor")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.title").value("No autenticado"));
+    }
+
     @Test
     void rejectsMalformedAuthorizationHeader() throws Exception {
         mockMvc.perform(get("/api/rooms").header("Authorization", "Bearer no-es-un-jwt"))

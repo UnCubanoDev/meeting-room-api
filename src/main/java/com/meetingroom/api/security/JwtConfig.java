@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
@@ -52,11 +53,17 @@ public class JwtConfig {
         return new NimbusJwtEncoder(new ImmutableSecret<>(jwtSecretKey));
     }
 
+    /**
+     * Ademas de firma y expiracion (validadores por defecto), exige que el {@code iss} sea el de
+     * esta API: un token firmado con la misma clave por otro emisor no debe aceptarse.
+     */
     @Bean
-    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey) {
-        return NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, JwtProperties properties) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
+        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(properties.issuer()));
+        return decoder;
     }
 
 }
