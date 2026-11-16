@@ -28,7 +28,8 @@ documentacion OpenAPI y autenticacion JWT.
 
 - JDK 17 o superior (`java -version`).
 - No es necesario instalar Maven: el proyecto incluye el Maven Wrapper.
-- PostgreSQL 14+ para ejecutar la aplicacion en local (no se necesita para los tests).
+- Docker (con Docker Compose) para levantar PostgreSQL, o un PostgreSQL 14+ propio. No se
+  necesita para los tests, que usan H2 en memoria.
 
 ## Estructura de paquetes
 
@@ -246,46 +247,75 @@ BCrypt.
 > **no son secretos**. Fuera de `dev` no se crea ningun usuario: el esquema sale vacio.
 
 Los tokens se validan por firma, vigencia y emisor (`iss`): un token firmado con la misma clave
-pero emitido por otro no se acepta.
+pero emitido por otro no se acepta. El secreto y la vida del token se configuran con
+`JWT_SECRET` y `JWT_TTL` (ver [Configuracion](#configuracion)).
 
-Variables de entorno:
+## Como ejecutarlo
 
-| Variable | Por defecto | Descripcion |
-| --- | --- | --- |
-| `JWT_SECRET` | _(ninguno; en `dev`, uno de desarrollo)_ | Clave de firma HS256 (minimo 32 bytes). Sin ella la aplicacion no arranca |
-| `JWT_TTL` | `PT30M` | Vida del token (formato ISO-8601) |
-| `BOOKINGS_TIME_ZONE` | `UTC` | Zona en la que se interpreta el filtro `date` de reservas |
+### 1. Levantar PostgreSQL
 
-## Ejecucion preliminar
+```bash
+docker compose up -d
+```
 
-Compilar y ejecutar los tests:
+Arranca PostgreSQL 16 en `localhost:5432` (base, usuario y contrasena `meeting_room`), con los
+datos en un volumen. Para usar otro puerto: `DB_PORT=5433 docker compose up -d`, y arrancar la
+aplicacion con `DB_URL=jdbc:postgresql://localhost:5433/meeting_room`.
+
+### 2. Arrancar la API con el perfil `dev`
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev     # Linux / macOS
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=dev   # Windows
+```
+
+Al iniciar, Flyway crea el esquema y el perfil `dev` carga los usuarios de prueba
+(`admin` / `admin1234` y `usuario` / `usuario1234`). La API queda en `http://localhost:8080`, con
+Swagger UI en `/swagger-ui.html` (boton **Authorize** para pegar el token) y la especificacion en
+`/v3/api-docs`.
+
+### 3. Probarla
+
+```bash
+# Token de administrador
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login   -H "Content-Type: application/json"   -d '{"username":"admin","password":"admin1234"}' | sed -E 's/.*"accessToken":"([^"]+)".*//')
+
+# Crear una sala (requiere ADMIN)
+curl -i -X POST http://localhost:8080/api/rooms   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"name":"Sala Atlas","capacity":8}'
+
+# Reservarla; repetir la misma peticion devuelve 409
+curl -i -X POST http://localhost:8080/api/bookings   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"roomId":1,"start":"2030-01-15T10:00:00Z","end":"2030-01-15T11:00:00Z"}'
+
+# Consultar (publico, sin token)
+curl "http://localhost:8080/api/bookings?roomId=1&date=2030-01-15"
+```
+
+### Tests
 
 ```bash
 ./mvnw clean test        # Linux / macOS
 mvnw.cmd clean test      # Windows
 ```
 
-Arrancar la aplicacion en local con el perfil `dev` (usuarios de prueba y secreto JWT de
-desarrollo):
+No necesitan Docker ni PostgreSQL.
 
-```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-```
+### Configuracion
 
-Sin el perfil `dev` hay que definir `JWT_SECRET` y crear los usuarios por otra via.
+Todo se toma de variables de entorno; el perfil `dev` solo aporta valores por defecto de
+desarrollo.
 
-La configuracion de base de datos se toma de variables de entorno, sin credenciales en el
-repositorio:
+| Variable | Por defecto | Con perfil `dev` | Descripcion |
+| --- | --- | --- | --- |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/meeting_room` | igual | URL JDBC de PostgreSQL |
+| `DB_USERNAME` | `meeting_room` | igual | Usuario de la base |
+| `DB_PASSWORD` | _(vacio)_ | `meeting_room` | Contrasena de la base |
+| `JWT_SECRET` | _(ninguno: no arranca)_ | secreto de desarrollo | Clave de firma HS256, minimo 32 bytes |
+| `JWT_TTL` | `PT30M` | igual | Vida del token (ISO-8601) |
+| `BOOKINGS_TIME_ZONE` | `UTC` | igual | Zona del filtro `date` de reservas |
+| `SERVER_PORT` | `8080` | igual | Puerto HTTP |
 
-| Variable | Valor por defecto |
-| --- | --- |
-| `DB_URL` | `jdbc:postgresql://localhost:5432/meeting_room` |
-| `DB_USERNAME` | `meeting_room` |
-| `DB_PASSWORD` | _(vacio)_ |
-| `SERVER_PORT` | `8080` |
-
-Una vez arrancada, la documentacion estara disponible en `/swagger-ui.html`
-(especificacion en `/v3/api-docs`).
+Fuera de `dev` (por ejemplo, `SPRING_PROFILES_ACTIVE` vacio en un servidor) hay que definir al
+menos `DB_PASSWORD` y `JWT_SECRET`, y crear los usuarios por otra via.
 
 > Nota: la aplicacion arranca contra PostgreSQL real y aplica las migraciones de
 > `src/main/resources/db/migration` al iniciar. Hibernate corre en modo `validate`, de modo
