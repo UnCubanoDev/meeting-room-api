@@ -321,3 +321,69 @@ menos `DB_PASSWORD` y `JWT_SECRET`, y crear los usuarios por otra via.
 > `src/main/resources/db/migration` al iniciar. Hibernate corre en modo `validate`, de modo
 > que el esquema debe coincidir con las entidades. Los tests usan H2 en memoria (perfil
 > `test`), con Flyway desactivado y el esquema generado por Hibernate.
+
+## Decisiones tomadas
+
+- **Responsable del token**: el cuerpo de `POST /api/bookings` no acepta `responsible`; se toma
+  del JWT para que nadie pueda reservar en nombre de otro.
+- **Intervalo semiabierto `[start, end)`**: una reserva que termina a las 11:00 no bloquea la que
+  empieza a las 11:00. Se aplica tanto en la busqueda de solapes como en la restriccion `EXCLUDE`.
+- **Cancelacion logica** (`POST .../{id}/cancel` en lugar de `DELETE`): la reserva pasa a
+  `CANCELLED`, guarda `cancelledAt` y sigue consultable como historial.
+- **Concurrencia**: bloqueo `SELECT ... FOR UPDATE` de la sala mas la restriccion `EXCLUDE` de
+  PostgreSQL como red de seguridad ante escrituras simultaneas.
+- **JWT HS256 con Spring Security Resource Server**: sin librerias de terceros; firma, vigencia e
+  emisor los valida el framework. Los roles viajan en un claim propio (`roles`).
+- **Superficie cerrada por defecto**: `anyRequest().denyAll()`; un endpoint nuevo nace protegido
+  y hay que autorizarlo explicitamente.
+- **Errores uniformes**: Problem Details (RFC 7807) tambien para los `401`/`403` de la cadena de
+  filtros, no solo para las excepciones de los controladores.
+- **H2 solo en tests**: las migraciones usan SQL especifico de PostgreSQL (`btree_gist`,
+  `EXCLUDE`), por eso Flyway se desactiva en el perfil `test` y Hibernate genera el esquema.
+
+## Que haria con mas tiempo
+
+- Tests de concurrencia reales con Testcontainers/PostgreSQL para verificar la restriccion
+  `EXCLUDE` bajo carga, ademas del bloqueo por sala.
+- Refresh y revocacion de tokens: hoy expiran a los 30 minutos y no se pueden invalidar.
+- Gestion completa de salas (editar/desactivar) y un endpoint de disponibilidad que devuelva
+  huecos libres.
+- Auditoria de cancelaciones (quien, cuando y motivo) y notificaciones al responsable.
+- Observabilidad con Micrometer/Prometheus y externalizacion de secretos en produccion.
+
+## Uso de la IA
+
+> Este proyecto fue desarrollado con la asistencia de un agente IA (este pro-expert) actuando como ingeniero senior orquestador de subagentes especializados. Los subagentes invocados fueron:
+> - `@code-review` (revisión de seguridad enfocada) en los incrementos 3 y 5.
+> - Herramientas nativas: `read`, `edit`, `write`, `grep`, `glob`, `bash` (para `mvnw`, `git`, `curl`, `javap`, `jshell`). No se usaron búsquedas web (`webfetch`).
+
+### Qué se pidió, qué se aceptó y qué se corrigió
+
+**Incremento 3** (revisión `@code-review`):
+- **Aplicado**: `ProblemDetailsExceptionHandler` sin `@Order` → se añadió `@Order(0)` para ganar al handler por defecto de Boot.
+- **Deferido**: la dependencia `spring-security-test` sin uso real en `pom.xml:83` y el `.param("unused","x")` en `RoomControllerTest.java:112` → ambos removidos en el incremento 4.
+
+**Incremento 5** (revisión `@code-review`):
+- **Aplicado**: el claim `iss` debe ser una URL para que `Jwt.getIssuer()` funcione; el valor `meeting-room-api` era una trampa latente. Se corrigió en `application.properties` y `TokenServiceTest.java`.
+- **Aplicado**: hash BCrypt dummy para pruebas de igualdad de tiempo (`timing-equalizer`), verificado con `BCryptPasswordEncoder.matches`.
+- **Aplicado**: encabezado `WWW-Authenticate: Bearer` en respuestas 401 (`ProblemAuthenticationEntryPoint.java:28-29`).
+- **Aplicado**: `Cache-Control: no-store` en respuestas de login (`AuthController.java:27-33`).
+- **Aplicado**: validación de `JWT_TTL` positiva (`JwtProperties.java:16`).
+- **Aplicado**: eliminación de código muerto `existsByUsername` en `AppUserRepository.java:12`.
+- **Deferido**: rate limiting (necesita infraestructura externa); refresh tokens (fuera de alcance); auditoría de cancelaciones (pendiente para incremento posterior).
+
+**Incremento 6** (reservas): se implementaron las reglas de solape, cancelación y filtros con paginación; se corrigió el orden de validación del sort (`e8b9e51`) y se añadió `docker-compose` para desarrollo local (`084890e`).
+
+### Herramientas usadas
+
+- `read` / `edit` / `write` / `grep` / `glob` para manipulación de archivos.
+- `bash`: `.\mvnw.cmd -B clean test`, `git diff`, `git push`, `curl` para pruebas HTTP reales, `javap` para inspeccionar bytecode (firmas de `PagedModel`, `DaoAuthenticationProvider`, `NimbusJwtDecoder`), `jshell` para generar hashes BCrypt.
+- No se usaron búsquedas web (`webfetch`).
+
+### Verificación
+
+- Ejecución: `.\mvnw.cmd -B clean test` → 101/101 tests verdes.
+- Pruebas HTTP reales con `curl` contra la app arrancada con Flyway + `ddl-auto=validate` sobre H2: login con credenciales reales → JWT con `iss=https://meeting-room-api`, `sub=admin`, `roles:["ADMIN"]`; contraseña incorrecta → 401 idéntico; token manipulado → 401; `/api/reservas` anónimo → 401; `/api/reservas` con token USER → 403; todas las respuestas en `problem+json`.
+- Inspección de bytecode con `javap` para confirmar firmas reales (`PagedModel(Page)`, `DaoAuthenticationProvider(UserDetailsService)`, `NimbusJwtDecoder` con `SingleKeyJWSKeySelector(HS256, key)`) en lugar de confiar en la memoria.
+
+> **Nota**: el agente nunca commiteó ni pusheó sin petición explícita del usuario. El HEAD actual es `0259d62` (docs(readme): reescribe la guia de ejecucion), sincronizado con `origin/master`.
